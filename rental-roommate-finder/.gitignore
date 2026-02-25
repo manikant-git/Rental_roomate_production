@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.local
+.env.*.local
+*.log
+npm-debug.log*
+build/
+dist/
+coverage/
+.nyc_output/
+*.pem
+*.key
+.DS_Store
+Thumbs.db

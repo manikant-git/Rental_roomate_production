@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rental-app
+  labels:
+    app: rental-roommate-finder
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: rental-app
+data:
+  NODE_ENV: "production"
+  AUTH_SERVICE_URL: "http://auth-service:3001"
+  LISTING_SERVICE_URL: "http://listing-service:3002"
+  ROOMMATE_SERVICE_URL: "http://roommate-service:3003"
+  NOTIFICATION_SERVICE_URL: "http://notification-service:3004"
+  RABBITMQ_URL: "amqp://rabbit_user:rabbit_pass@rabbitmq:5672"
+  KAFKA_BROKERS: "kafka:9092"
+  REDIS_URL: "redis://:redis_pass@redis:6379"
+  DATABASE_URL: "postgresql://rental_user:rental_pass@postgres:5432/rental_db"
