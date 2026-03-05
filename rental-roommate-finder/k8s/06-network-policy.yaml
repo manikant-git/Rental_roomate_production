@@ -1,0 +1,136 @@
+# ================================================================
+# KUBERNETES NETWORK POLICIES - Zero Trust Architecture
+# Only allow explicitly permitted traffic between microservices
+# ================================================================
+
+# Default Deny All Ingress and Egress in rental-app namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: rental-app
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Allow DNS resolution for all pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: rental-app
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# API Gateway: Allow ingress from Ingress Controller, egress to all backend services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-policy
+  namespace: rental-app
+spec:
+  podSelector:
+    matchLabels:
+      app: api-gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 3000
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: auth-service
+      ports:
+        - port: 3001
+    - to:
+        - podSelector:
+            matchLabels:
+              app: listing-service
+      ports:
+        - port: 3002
+    - to:
+        - podSelector:
+            matchLabels:
+              app: roommate-service
+      ports:
+        - port: 3003
+    - to:
+        - podSelector:
+            matchLabels:
+              app: notification-service
+      ports:
+        - port: 3004
+---
+# Auth Service: Allow ingress only from API Gateway
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: auth-service-policy
+  namespace: rental-app
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+      ports:
+        - port: 3001
+  egress:
+    - to:  # Allow egress to RDS and Redis
+        - ipBlock:
+            cidr: 10.0.0.0/16  # VPC CIDR
+      ports:
+        - port: 5432
+        - port: 6379
+---
+# Listing Service: Allow ingress from API Gateway
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: listing-service-policy
+  namespace: rental-app
+spec:
+  podSelector:
+    matchLabels:
+      app: listing-service
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: api-gateway
+      ports:
+        - port: 3002
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/16
+      ports:
+        - port: 5432
+        - port: 6379
+        - port: 5672  # RabbitMQ
