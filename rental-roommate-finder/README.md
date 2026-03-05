@@ -1,205 +1,92 @@
-# RentMate - Production-Grade Rental & Roommate Platform
+# RentMate: Production Microservices Platform
 
-> **Organisation-level production project** | Built by a DevOps Engineer thinking like a Lead Architect
-
-[![CI/CD Pipeline](https://github.com/manikant-git/Rental_roomate_production/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/manikant-git/Rental_roomate_production/actions)
+RentMate is a production-grade, organisation-level rental and roommate matching platform. It is built using a cloud-native microservices architecture, automated infrastructure as code (Terraform), and a high-security CI/CD pipeline on AWS EKS.
 
 ---
 
-## Architecture Overview
+## 🏗 1. Architecture Flow
 
-```
-                           [Internet]
-                               |
-                    [Route 53 DNS / ALB]
-                               |
-                   [NGINX Ingress Controller]
-                    /          |           \
-             [Frontend]  [/api/* -> API Gateway]
-                                    |
-              +----------+---------+---------+----------+
-              |          |         |         |          |
-        [Auth Svc]  [Listing Svc] [Roommate] [Notif Svc]
-              |          |         |         |
-         [PostgreSQL RDS Multi-AZ] [Redis Cluster]
-                    |                    |
-              [RabbitMQ]         [AWS Secrets Manager]
-```
+### High-Level Traffic Flow
+1. **User Request**: User accesses `rentmate.yourdomain.com` via browser.
+2. **DNS & Networking**: Traffic hits **AWS Route 53**, which routes to an **AWS Application Load Balancer (ALB)** created by the EKS Ingress Controller.
+3. **Ingress Layer**: The **NGINX Ingress Controller** terminates SSL (via cert-manager) and applies rate-limiting.
+4. **Routing**:
+   - Requests to `/` are served by the **Frontend (React)** pod.
+   - Requests to `/api/*` are routed to the **API Gateway**.
+5. **API Gateway**: Handles cross-cutting concerns (JWT verification, logging) and proxies requests to internal microservices.
+6. **Microservices**: Services like `Auth`, `Listing`, and `Roommate` process business logic.
+7. **Data Layer**: Services connect to a **Multi-AZ RDS PostgreSQL** for persistence and **ElasticCache Redis** for session caching.
+8. **Asynchronous Tasks**: Events (like user signup) are published to **RabbitMQ**, which the **Notification Service** consumes to send emails.
 
 ---
 
-## Project Structure
+## 🛠 2. Implementation details (How we built it)
 
-```
-rental-roommate-finder/
-├── .github/
-│   └── workflows/
-│       └── ci-cd.yml             # 5-stage production CI/CD pipeline
-├── backend/
-│   ├── api-gateway/              # Entry point - routes to microservices
-│   ├── auth-service/             # JWT auth, refresh tokens
-│   ├── listing-service/          # Rental listings CRUD, search
-│   ├── roommate-service/         # Roommate profiles & matching
-│   └── notification-service/     # Email/push via RabbitMQ
-├── frontend/                     # React.js application
-├── k8s/
-│   ├── 00-namespace-configmap.yaml
-│   ├── 01-secrets.yaml           # REPLACED by External Secrets Operator
-│   ├── 02-postgres.yaml          # Dev only - prod uses RDS
-│   ├── 03-infra-redis-rabbitmq.yaml
-│   ├── 04-services.yaml          # All service deployments + HPA
-│   ├── 05-ingress.yaml           # NGINX ingress + cert-manager TLS
-│   ├── 06-network-policy.yaml    # Zero-trust network policies
-│   └── 07-pdb-external-secrets.yaml  # PDB + ESO for AWS SSM
-├── terraform/
-│   ├── main.tf                   # Root module calling all sub-modules
-│   ├── variables.tf              # Input variables
-│   ├── outputs.tf                # Exported values
-│   └── modules/
-│       ├── eks/main.tf           # EKS cluster + IRSA + OIDC
-│       ├── vpc/main.tf           # 3-AZ VPC + NAT HA + flow logs
-│       └── rds/main.tf           # Multi-AZ RDS + Secrets Manager
-└── scripts/                      # Helper deployment scripts
-```
+- **Infrastructure (IaC)**: We used **Terraform Modules** to ensure consistency. A VPC with public/private subnets and NAT Gateways provides a secure network perimeter.
+- **Kubernetes Orchestration**: Deployed on **AWS EKS**. We implemented **Horizontal Pod Autoscalers (HPA)** to scale based on traffic and **PodDisruptionBudgets** to ensure 99.9% availability during upgrades.
+- **Security**:
+  - **Zero-Trust**: K8s NetworkPolicies deny all traffic by default, allowing only specific microservice-to-microservice paths.
+  - **IAM Roles for Service Accounts (IRSA)**: Pods assume IAM roles directly via OIDC, eliminating the need for hardcoded AWS keys.
+  - **Secrets**: Replaced standard K8s secrets with **External Secrets Operator**, which auto-syncs encrypted values from **AWS Secrets Manager**.
+- **CI/CD**: A 5-stage GitHub Actions pipeline that includes **Trivy Vulnerability Scanning** and **Automated Rollbacks** if a deployment fails health checks.
 
 ---
 
-## Microservices
+## 🚀 3. Getting Started: Step-by-Step
 
-| Service | Port | Responsibility |
-|---|---|---|
-| `api-gateway` | 3000 | Route requests, auth middleware, rate limiting |
-| `auth-service` | 3001 | JWT login/register/refresh |
-| `listing-service` | 3002 | Property listings, search, filters |
-| `roommate-service` | 3003 | Roommate matching & profiles |
-| `notification-service` | 3004 | Email/push via RabbitMQ consumers |
-| `frontend` | 80 | React SPA served via NGINX |
+### Step 1: Prerequisites
+You must have the following tools installed locally:
+- [AWS CLI](https://aws.amazon.com/cli/) (configured with Admin permissions)
+- [Terraform](https://www.terraform.io/downloads) (v1.5+)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/)
+- [Helm](https://helm.sh/docs/intro/install/)
 
----
-
-## CI/CD Pipeline (5 Stages)
-
-```
-PR / Push
-   |
-   v
-[1. Test] --> Lint + Unit Tests per service (parallel matrix)
-   |
-   v
-[2. Build] --> Docker multi-stage build + push to GHCR (sha tags)
-   |
-   v
-[3. Security] --> Trivy CRITICAL/HIGH scan - fails pipeline if found
-   |
-   +----> develop branch: [4. Staging Deploy] --> Smoke Tests
-   |
-   +----> main branch:    [5. Production Deploy] --> Health Verify
-                                  --> Slack Notification
-                                  --> Auto-rollback on failure
-                                  --> Git tag with version
-```
-
-**Key Security Improvement:** No stored AWS credentials. Uses **GitHub OIDC** to assume IAM roles (`AWS_PROD_ROLE_ARN`) — zero long-lived secrets in GitHub.
-
----
-
-## Infrastructure (Terraform)
-
-### How to Deploy Infrastructure
-
+### Step 2: Provision Cloud Infrastructure
+Deploy the VPC, EKS Cluster, and RDS Database.
 ```bash
 cd rental-roommate-finder/terraform
+terraform init
+terraform apply -var="db_password=YOUR_SECURE_PASSWORD"
+```
+*Note: This will take ~15-20 minutes to provision the EKS cluster.*
 
-# Initialize with remote state backend (S3 + DynamoDB)
-terraform init \
-  -backend-config="bucket=rentmate-terraform-state" \
-  -backend-config="key=production/terraform.tfstate" \
-  -backend-config="region=us-east-1"
-
-# Plan and review
-terraform plan -var="db_password=$DB_PASS" -var="environment=production"
-
-# Apply (creates VPC, EKS, RDS)
-terraform apply -var="db_password=$DB_PASS" -var="environment=production"
+### Step 3: Configure Kubernetes Cluster
+Connect your local `kubectl` to the new cluster.
+```bash
+aws eks update-kubeconfig --name rental-prod-cluster --region us-east-1
 ```
 
-### What Gets Created
-
-| Resource | Details |
-|---|---|
-| **VPC** | 3-AZ, public + private subnets, HA NAT gateways, VPC Flow Logs |
-| **EKS** | v1.28, managed node groups (t3.medium, 2-10 nodes), OIDC enabled |
-| **RDS** | PostgreSQL 15, Multi-AZ, encrypted at rest, 7-day backups |
-| **IAM** | IRSA roles for External Secrets, cluster + node roles |
-
----
-
-## Kubernetes Deployment
-
-### Prerequisites
-
+### Step 4: Install Controller Prerequisites
+Install the required operators via Helm:
 ```bash
-# 1. Install NGINX Ingress Controller
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+# 1. Ingress Controller
 helm install ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace
 
-# 2. Install cert-manager for TLS
-helm repo add jetstack https://charts.jetstack.io
-helm install cert-manager jetstack/cert-manager -n cert-manager --create-namespace \
-  --set installCRDs=true
-
-# 3. Install External Secrets Operator
-helm repo add external-secrets https://charts.external-secrets.io
+# 2. External Secrets Operator
 helm install external-secrets external-secrets/external-secrets -n external-secrets --create-namespace
 ```
 
-### Deploy Application
-
+### Step 5: Deploy the Application
+Apply the manifests in order to set up the namespace, networking, and services.
 ```bash
-# Get kubeconfig from EKS
-aws eks update-kubeconfig --name rental-prod-cluster --region us-east-1
-
-# Apply all manifests in order
-kubectl apply -f k8s/00-namespace-configmap.yaml
-kubectl apply -f k8s/03-infra-redis-rabbitmq.yaml
-kubectl apply -f k8s/04-services.yaml
-kubectl apply -f k8s/05-ingress.yaml
-kubectl apply -f k8s/06-network-policy.yaml
-kubectl apply -f k8s/07-pdb-external-secrets.yaml
-
-# Verify all pods are Running
-kubectl get pods -n rental-app
-kubectl get ingress -n rental-app
+cd ../k8s
+kubectl apply -f 00-namespace-configmap.yaml
+kubectl apply -f 03-infra-redis-rabbitmq.yaml
+kubectl apply -f 04-services.yaml
+kubectl apply -f 05-ingress.yaml
+kubectl apply -f 06-network-policy.yaml
+kubectl apply -f 07-pdb-external-secrets.yaml
 ```
 
 ---
 
-## GitHub Secrets Required
-
-| Secret | Description |
-|---|---|
-| `AWS_PROD_ROLE_ARN` | IAM role ARN for production deploy (OIDC) |
-| `AWS_STAGING_ROLE_ARN` | IAM role ARN for staging deploy (OIDC) |
-| `SLACK_WEBHOOK_URL` | Slack incoming webhook for deploy alerts |
-
----
-
-## Production Standards
-
-| Standard | Status | Implementation |
-|---|---|---|
-| Zero-downtime deploys | Done | Rolling updates, maxUnavailable: 0 |
-| Auto-scaling | Done | HPA on CPU/Memory for all services |
-| High Availability | Done | Multi-replica + Multi-AZ RDS + HA NAT |
-| Secret Management | Done | External Secrets Operator + AWS SSM |
-| TLS/SSL | Done | cert-manager + Let's Encrypt |
-| Zero-Trust Networking | Done | K8s NetworkPolicies, default deny |
-| Container Security | Done | Non-root user, multi-stage builds |
-| IaC | Done | Full Terraform modules |
-| Security Scanning | Done | Trivy in CI/CD (blocks on CRITICAL) |
-| Observability | Configured | Prometheus + Grafana + CloudWatch Logs |
-| Disaster Recovery | Done | Multi-AZ RDS + 7-day backups |
+## 📈 4. End-to-End Production Checklist
+- [ ] **Infrastructure**: VPC, EKS, RDS provisioned via Terraform.
+- [ ] **Networking**: Ingress routing traffic to Frontend and Backend.
+- [ ] **Security**: NetworkPolicies active; Secrets pulled from AWS SSM.
+- [ ] **Scaling**: HPA configured for API Gateway and Listing Service.
+- [ ] **Monitoring**: Prometheus/Grafana stack viewing EKS metrics.
+- [ ] **Pipeline**: GitHub Secrets (`AWS_PROD_ROLE_ARN`, `SLACK_WEBHOOK`) configured.
 
 ---
-
-*Maintained by [manikant-git](https://github.com/manikant-git) | DevOps Engineer*
+*Developed for Organisation-level scaling by [manikant-git](https://github.com/manikant-git)*
