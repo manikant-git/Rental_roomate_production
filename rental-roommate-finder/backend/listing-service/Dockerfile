@@ -1,7 +1,7 @@
 FROM node:20-alpine AS base
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm install --only=production --legacy-peer-deps && npm cache clean --force
 
 FROM node:20-alpine AS production
 RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
