@@ -1,214 +1,203 @@
+# =============================================================
+# Docker Compose - Local Development
+# Spins up all microservices locally without Kubernetes
+# Usage: docker-compose up --build
+# =============================================================
+
+version: '3.8'
+
+networks:
+  rentmate-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+
 services:
-  # ─── Infrastructure ───────────────────────────────────────────────────────
+
+  # ---- Infrastructure ----
+
   postgres:
     image: postgres:15-alpine
-    container_name: rental_postgres
+    container_name: rentmate_postgres
     environment:
-      POSTGRES_USER: rental_user
-      POSTGRES_PASSWORD: rental_pass
-      POSTGRES_DB: rental_db
+      POSTGRES_USER: rentmate
+      POSTGRES_PASSWORD: rentmate_local_pass
+      POSTGRES_DB: rentmate
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "5432:5432"
+    networks:
+      - rentmate-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U rental_user -d rental_db"]
+      test: ["CMD-SHELL", "pg_isready -U rentmate -d rentmate"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: rental_redis
-    command: redis-server --appendonly yes --requirepass redis_pass
-    volumes:
-      - redis_data:/data
+    container_name: rentmate_redis
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - rentmate-net
     healthcheck:
-      test: ["CMD", "redis-cli", "--pass", "redis_pass", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   rabbitmq:
     image: rabbitmq:3.12-management-alpine
-    container_name: rental_rabbitmq
-    environment:
-      RABBITMQ_DEFAULT_USER: rabbit_user
-      RABBITMQ_DEFAULT_PASS: rabbit_pass
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
+    container_name: rentmate_rabbitmq
     ports:
       - "5672:5672"
-      - "15672:15672"
+      - "15672:15672"   # Management UI -> http://localhost:15672 (guest/guest)
+    networks:
+      - rentmate-net
     healthcheck:
-      test: rabbitmq-diagnostics -q ping
-      interval: 30s
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 15s
       timeout: 10s
       retries: 5
 
-  # zookeeper:
-  #   image: confluentinc/cp-zookeeper:7.4.0
-  #   container_name: rental_zookeeper
-  #   environment:
-  #     ZOOKEEPER_CLIENT_PORT: 2181
-  #     ZOOKEEPER_TICK_TIME: 2000
-  #   volumes:
-  #     - zookeeper_data:/var/lib/zookeeper
-
-  # kafka:
-  #   image: confluentinc/cp-kafka:7.4.0
-  #   container_name: rental_kafka
-  #   depends_on:
-  #     - zookeeper
-  #   environment:
-  #     KAFKA_BROKER_ID: 1
-  #     KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-  #     KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
-  #     KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-  #     KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-  #     KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-  #     KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-  #   volumes:
-  #     - kafka_data:/var/lib/kafka/data
-  #   ports:
-  #     - "29092:29092"
-  #   healthcheck:
-  #     test: kafka-broker-api-versions --bootstrap-server localhost:9092
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 5
-
-  # ─── Backend Services ──────────────────────────────────────────────────────
-  api-gateway:
-    build:
-      context: ./backend/api-gateway
-      dockerfile: Dockerfile
-    container_name: rental_api_gateway
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      JWT_SECRET: ${JWT_SECRET:-supersecretkey}
-      AUTH_SERVICE_URL: http://auth-service:3001
-      LISTING_SERVICE_URL: http://listing-service:3002
-      ROOMMATE_SERVICE_URL: http://roommate-service:3003
-      NOTIFICATION_SERVICE_URL: http://notification-service:3004
-      REDIS_URL: redis://:redis_pass@redis:6379
-    ports:
-      - "3000:3000"
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
+  # ---- Backend Services ----
 
   auth-service:
     build:
       context: ./backend/auth-service
       dockerfile: Dockerfile
-    container_name: rental_auth
+    container_name: rentmate_auth
+    ports:
+      - "3001:3001"
     environment:
-      NODE_ENV: production
+      NODE_ENV: development
       PORT: 3001
-      DATABASE_URL: postgresql://rental_user:rental_pass@postgres:5432/rental_db
-      JWT_SECRET: ${JWT_SECRET:-supersecretkey}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-refreshsecretkey}
-      REDIS_URL: redis://:redis_pass@redis:6379
-      RABBITMQ_URL: amqp://rabbit_user:rabbit_pass@rabbitmq:5672
+      DATABASE_URL: postgresql://rentmate:rentmate_local_pass@postgres:5432/rentmate
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: local-dev-jwt-secret-min-32-chars-long
+      JWT_REFRESH_SECRET: local-dev-refresh-secret-min-32-chars
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+    networks:
+      - rentmate-net
     restart: unless-stopped
 
   listing-service:
     build:
       context: ./backend/listing-service
       dockerfile: Dockerfile
-    container_name: rental_listing
+    container_name: rentmate_listing
+    ports:
+      - "3002:3002"
     environment:
-      NODE_ENV: production
+      NODE_ENV: development
       PORT: 3002
-      DATABASE_URL: postgresql://rental_user:rental_pass@postgres:5432/rental_db
-      REDIS_URL: redis://:redis_pass@redis:6379
-      KAFKA_BROKERS: kafka:9092
-      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-rental-listings-images}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-dummy}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-dummy}
-      AWS_REGION: ${AWS_REGION:-us-east-1}
+      DATABASE_URL: postgresql://rentmate:rentmate_local_pass@postgres:5432/rentmate
+      REDIS_URL: redis://redis:6379
+      AWS_S3_BUCKET: rental-listings-images
+      AWS_REGION: us-east-1
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-      # kafka:          # commented - kafka disabled
-      #   condition: service_healthy
+    networks:
+      - rentmate-net
     restart: unless-stopped
 
   roommate-service:
     build:
       context: ./backend/roommate-service
       dockerfile: Dockerfile
-    container_name: rental_roommate
+    container_name: rentmate_roommate
+    ports:
+      - "3003:3003"
     environment:
-      NODE_ENV: production
+      NODE_ENV: development
       PORT: 3003
-      DATABASE_URL: postgresql://rental_user:rental_pass@postgres:5432/rental_db
-      REDIS_URL: redis://:redis_pass@redis:6379
-      KAFKA_BROKERS: kafka:9092
-      RABBITMQ_URL: amqp://rabbit_user:rabbit_pass@rabbitmq:5672
+      DATABASE_URL: postgresql://rentmate:rentmate_local_pass@postgres:5432/rentmate
+      REDIS_URL: redis://redis:6379
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      # kafka:          # commented - kafka disabled
-      #   condition: service_healthy
+    networks:
+      - rentmate-net
     restart: unless-stopped
 
   notification-service:
     build:
       context: ./backend/notification-service
       dockerfile: Dockerfile
-    container_name: rental_notification
+    container_name: rentmate_notification
+    ports:
+      - "3004:3004"
     environment:
-      NODE_ENV: production
+      NODE_ENV: development
       PORT: 3004
-      DATABASE_URL: postgresql://rental_user:rental_pass@postgres:5432/rental_db
-      RABBITMQ_URL: amqp://rabbit_user:rabbit_pass@rabbitmq:5672
-      KAFKA_BROKERS: kafka:9092
-      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-dummy}
-      SMTP_PASS: ${SMTP_PASS:-dummy}
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: 587
     depends_on:
       rabbitmq:
         condition: service_healthy
+    networks:
+      - rentmate-net
     restart: unless-stopped
 
-  # ─── Frontend ──────────────────────────────────────────────────────────────
+  api-gateway:
+    build:
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile
+    container_name: rentmate_gateway
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      AUTH_SERVICE_URL: http://auth-service:3001
+      LISTING_SERVICE_URL: http://listing-service:3002
+      ROOMMATE_SERVICE_URL: http://roommate-service:3003
+      NOTIFICATION_SERVICE_URL: http://notification-service:3004
+      JWT_SECRET: local-dev-jwt-secret-min-32-chars-long
+    depends_on:
+      - auth-service
+      - listing-service
+      - roommate-service
+      - notification-service
+    networks:
+      - rentmate-net
+    restart: unless-stopped
+
+  # ---- Frontend ----
+
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        REACT_APP_API_URL: http://localhost:3000/api
-    container_name: rental_frontend
+    container_name: rentmate_frontend
     ports:
-      - "80:80"
+      - "3005:3005"
+    environment:
+      NODE_ENV: development
+      REACT_APP_API_URL: http://localhost:3000
     depends_on:
       - api-gateway
+    networks:
+      - rentmate-net
     restart: unless-stopped
 
-volumes:
-  postgres_data:
-  redis_data:
-  rabbitmq_data:
-  zookeeper_data:
-  kafka_data:
+# Quick commands:
+# docker-compose up --build          -> Start all services with rebuild
+# docker-compose up -d               -> Start in background (detached)
+# docker-compose logs -f api-gateway -> Follow logs of a specific service
+# docker-compose ps                  -> Show status of all containers
+# docker-compose down -v             -> Stop and remove all containers + volumes
+# docker-compose exec postgres psql -U rentmate rentmate -> Open DB shell
