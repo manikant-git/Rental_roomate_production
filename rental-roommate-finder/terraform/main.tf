@@ -100,3 +100,33 @@ resource "aws_security_group" "rds_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
+
+
+# --- ECR Repositories ---
+resource "aws_ecr_repository" "backend" {
+  name                 = "rentmate-${var.environment}-backend"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = "rentmate"
+  }
+}
+
+resource "aws_ecr_repository" "frontend" {
+  name                 = "rentmate-${var.environment}-frontend"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    Environment = var.environment
+    Project     = "rentmate"
+  }
+}
