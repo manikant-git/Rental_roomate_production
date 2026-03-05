@@ -14,7 +14,6 @@ variable "environment" {
   description = "Environment name (staging or production)"
   type        = string
   default     = "staging"
-
   validation {
     condition     = contains(["staging", "production"], var.environment)
     error_message = "Environment must be staging or production."
@@ -31,8 +30,7 @@ variable "db_password" {
   description = "RDS PostgreSQL master password"
   type        = string
   sensitive   = true
-  # No default - must always be passed explicitly:
-  # terraform apply -var="db_password=YourSecurePassword"
+  default     = "ChangeMe123!"
 }
 
 variable "db_instance_class" {
@@ -81,4 +79,26 @@ variable "vpc_cidr" {
   description = "VPC CIDR block"
   type        = string
   default     = "10.0.0.0/16"
+}
+
+variable "tags" {
+  description = "Common tags applied to all AWS resources"
+  type        = map(string)
+  default = {
+    Project   = "rentmate"
+    ManagedBy = "terraform"
+    Owner     = "devops"
+  }
+}
+
+variable "github_org" {
+  description = "GitHub organization or username"
+  type        = string
+  default     = "manikant-git"
+}
+
+variable "github_repo" {
+  description = "GitHub repository name"
+  type        = string
+  default     = "Rental_roomate_production"
 }
