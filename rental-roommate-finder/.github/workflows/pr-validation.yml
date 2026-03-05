@@ -1,0 +1,37 @@
+name: PR Validation & Artifact Staging
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'rental-roommate-finder/backend/**'
+      - 'rental-roommate-finder/frontend/**'
+
+jobs:
+  validate:
+    name: "PR Quality Gate"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Lint and Unit Tests
+        run: |
+          echo "Executing PR validation sequence..."
+          # Real project would run: npm ci && npm test
+
+      - name: Build Build Artifact
+        run: |
+          mkdir -p dist
+          echo "SHA: ${{ github.sha }}" > dist/version.txt
+          tar -czf project-bundle.tar.gz dist/
+
+      - name: Push to Nexus (Mock)
+        run: |
+          echo "Uploading artifacts to Nexus Repository..."
+          # Real project: curl -v -u ${{ secrets.NEXUS_USER }}:${{ secrets.NEXUS_PASS }} --upload-file project-bundle.tar.gz http://nexus.yourdomain.com/repository/staging/
