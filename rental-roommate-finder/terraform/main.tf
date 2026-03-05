@@ -5,7 +5,7 @@ provider "aws" {
 # --- VPC & Networking ---
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.0"   # vpc module 5.x is compatible with AWS provider 5.x
+  version = "~> 5.0"  # vpc module 5.x is compatible with AWS provider 5.x
 
   name = "rental-production-vpc"
   cidr = "10.0.0.0/16"
@@ -28,10 +28,10 @@ module "vpc" {
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 19.0"  # v19.x is compatible with AWS provider ~> 5.0
-                        # v20+ requires AWS provider >= 6.0 - DO NOT upgrade
+  # v20+ requires AWS provider >= 6.0 - DO NOT upgrade
 
   cluster_name    = "rental-${var.environment}-cluster"
-  cluster_version = "1.28"
+  cluster_version = "1.31"  # Updated: 1.28 AMI no longer supported by AWS
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
@@ -40,9 +40,10 @@ module "eks" {
 
   eks_managed_node_groups = {
     general = {
-      desired_size   = var.node_desired_count
-      min_size       = var.node_min_count
-      max_size       = var.node_max_count
+      desired_size = var.node_desired_count
+      min_size     = var.node_min_count
+      max_size     = var.node_max_count
+
       instance_types = [var.node_instance_type]
       capacity_type  = "ON_DEMAND"
     }
@@ -58,17 +59,18 @@ module "eks" {
 resource "aws_db_instance" "postgres" {
   allocated_storage    = 20
   engine               = "postgres"
-  engine_version       = "15.4"
+  engine_version       = "15.8"  # Fixed: 15.4 not available in us-east-1
   instance_class       = var.db_instance_class
   db_name              = "rental_db"
   username             = "rental_admin"
   password             = var.db_password
-  parameter_group_name = "default.postgres15"
+  parameter_group_name = "default.postgres15"  # Works for all 15.x versions
   skip_final_snapshot  = true
 
   db_subnet_group_name   = aws_db_subnet_group.default.name
   vpc_security_group_ids = [aws_security_group.rds_sg.id]
-  multi_az               = var.environment == "production" ? true : false
+
+  multi_az = var.environment == "production" ? true : false
 
   tags = {
     Environment = var.environment
@@ -100,7 +102,6 @@ resource "aws_security_group" "rds_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
-
 
 # --- ECR Repositories ---
 resource "aws_ecr_repository" "backend" {
