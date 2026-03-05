@@ -1,11 +1,11 @@
 # =============================================================
-# VARIABLES - Controls all environment differences
-# Real org: same code, different values per environment
-# Staging uses staging.tfvars, Production uses prod.tfvars
+# TERRAFORM VARIABLES
+# All variables have defaults - no manual prompts during apply
+# Override via: terraform apply -var-file=environments/staging.tfvars
 # =============================================================
 
 variable "aws_region" {
-  description = "AWS region for all resources"
+  description = "AWS region to deploy resources"
   type        = string
   default     = "us-east-1"
 }
@@ -13,6 +13,8 @@ variable "aws_region" {
 variable "environment" {
   description = "Environment name (staging or production)"
   type        = string
+  default     = "staging"
+
   validation {
     condition     = contains(["staging", "production"], var.environment)
     error_message = "Environment must be staging or production."
@@ -22,108 +24,61 @@ variable "environment" {
 variable "cluster_name" {
   description = "EKS cluster name"
   type        = string
+  default     = "rental-staging-cluster"
 }
 
-variable "cluster_version" {
-  description = "Kubernetes version"
+variable "db_password" {
+  description = "RDS PostgreSQL master password"
   type        = string
-  default     = "1.29"
+  sensitive   = true
+  # No default - must always be passed explicitly:
+  # terraform apply -var="db_password=YourSecurePassword"
 }
 
-variable "vpc_cidr" {
-  description = "VPC CIDR block"
+variable "db_instance_class" {
+  description = "RDS instance type"
   type        = string
+  default     = "db.t3.micro"
 }
 
-variable "private_subnets" {
-  description = "Private subnet CIDRs (for EKS nodes, RDS)"
-  type        = list(string)
-}
-
-variable "public_subnets" {
-  description = "Public subnet CIDRs (for Load Balancers)"
-  type        = list(string)
-}
-
-variable "availability_zones" {
-  description = "AZs to spread resources across"
-  type        = list(string)
-  default     = ["us-east-1a", "us-east-1b", "us-east-1c"]
-}
-
-# ---- Node Group Config ----
 variable "node_instance_type" {
   description = "EC2 instance type for EKS worker nodes"
   type        = string
-  # staging: t3.medium, production: t3.large
+  default     = "t3.medium"
 }
 
 variable "node_desired_count" {
   description = "Desired number of worker nodes"
   type        = number
+  default     = 2
 }
 
 variable "node_min_count" {
   description = "Minimum worker nodes (for autoscaler)"
   type        = number
+  default     = 1
 }
 
 variable "node_max_count" {
   description = "Maximum worker nodes (for autoscaler)"
   type        = number
+  default     = 4
 }
 
-variable "node_capacity_type" {
-  description = "ON_DEMAND or SPOT"
+variable "private_subnets" {
+  description = "Private subnet CIDRs (for EKS nodes, RDS)"
+  type        = list(string)
+  default     = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+}
+
+variable "public_subnets" {
+  description = "Public subnet CIDRs (for Load Balancers)"
+  type        = list(string)
+  default     = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+}
+
+variable "vpc_cidr" {
+  description = "VPC CIDR block"
   type        = string
-  default     = "ON_DEMAND"
-  # staging can use SPOT to save cost
-  # production should use ON_DEMAND for stability
-}
-
-# ---- RDS Config ----
-variable "db_instance_class" {
-  description = "RDS instance type"
-  type        = string
-  # staging: db.t3.micro, production: db.t3.medium
-}
-
-variable "db_password" {
-  description = "RDS master password"
-  type        = string
-  sensitive   = true  # never printed in plan output
-  # In real org: passed via TF_VAR_db_password env variable
-  # or pulled from AWS Secrets Manager
-}
-
-variable "db_multi_az" {
-  description = "Enable multi-AZ for RDS (production only)"
-  type        = bool
-  default     = false
-}
-
-variable "db_backup_retention_days" {
-  description = "RDS backup retention period in days"
-  type        = number
-  default     = 7
-}
-
-# ---- GitHub Actions OIDC ----
-variable "github_org" {
-  description = "GitHub organization or username"
-  type        = string
-  default     = "manikant-git"
-}
-
-variable "github_repo" {
-  description = "GitHub repository name"
-  type        = string
-  default     = "Rental_roomate_production"
-}
-
-# ---- Tags (real org tags everything for cost tracking) ----
-variable "tags" {
-  description = "Common tags applied to all AWS resources"
-  type        = map(string)
-  default     = {}
+  default     = "10.0.0.0/16"
 }
