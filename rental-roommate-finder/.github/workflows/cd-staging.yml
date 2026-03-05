@@ -1,5 +1,5 @@
 # ================================================================
-# CD PIPELINE - Staging Environment
+# CD PIPELINE - Staging Environment (Docker Hub)
 # ================================================================
 name: CD - Staging Deploy
 
@@ -15,7 +15,6 @@ on:
 permissions:
   id-token: write
   contents: read
-  packages: write
 
 jobs:
   deploy:
@@ -32,20 +31,20 @@ jobs:
           role-to-assume: ${{ secrets.AWS_STAGING_ROLE_ARN }}
           aws-region: us-east-1
 
-      - name: Login to GHCR
+      - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and Push Staging Images
+      - name: Build and Push to Docker Hub
         run: |
+          DOCKER_USER="${{ secrets.DOCKERHUB_USERNAME }}"
           for svc in auth-service listing-service roommate-service notification-service api-gateway frontend; do
             CONTEXT="rental-roommate-finder/backend/$svc"
             if [ "$svc" == "frontend" ]; then CONTEXT="rental-roommate-finder/frontend"; fi
             
-            IMAGE_TAG="ghcr.io/${{ github.repository }}/$svc:staging"
+            IMAGE_TAG="$DOCKER_USER/rentmate-$svc:staging"
             docker build -t $IMAGE_TAG $CONTEXT
             docker push $IMAGE_TAG
           done
@@ -54,8 +53,13 @@ jobs:
         run: |
           aws eks update-kubeconfig --name rental-staging-cluster --region us-east-1
 
-      - name: Deploy to EKS
+      - name: Deploy to EKS (from Docker Hub)
         run: |
+          # Updating manifests to use Docker Hub images
+          DOCKER_USER="${{ secrets.DOCKERHUB_USERNAME }}"
+          for svc in auth-service listing-service api-gateway frontend; do
+            kubectl set image deployment/$svc $svc=$DOCKER_USER/rentmate-$svc:staging --record
+          done
           kubectl apply -f rental-roommate-finder/k8s/
           
       - name: Verify Rollout
