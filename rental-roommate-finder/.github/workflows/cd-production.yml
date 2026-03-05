@@ -1,3 +1,6 @@
+# ================================================================
+# CD PIPELINE - Production Environment (Docker Hub)
+# ================================================================
 name: CD - Production Deploy
 
 on:
@@ -7,42 +10,68 @@ on:
       - 'rental-roommate-finder/backend/**'
       - 'rental-roommate-finder/frontend/**'
       - 'rental-roommate-finder/k8s/**'
+  workflow_dispatch:
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  build-and-deploy:
+  deploy:
+    name: "Deploy to Production"
     runs-on: ubuntu-latest
+    environment: production
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (OIDC)
+      - name: Configure AWS Credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
           aws-region: us-east-1
 
-      - name: Login to GHCR
+      - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and Push Images
+      - name: Build and Push Production Images to Docker Hub
         run: |
+          DOCKER_USER="${{ secrets.DOCKERHUB_USERNAME }}"
           for svc in auth-service listing-service roommate-service notification-service api-gateway frontend; do
             CONTEXT="rental-roommate-finder/backend/$svc"
             if [ "$svc" == "frontend" ]; then CONTEXT="rental-roommate-finder/frontend"; fi
-            
-            docker build -t ghcr.io/${{ github.repository }}/$svc:latest $CONTEXT
-            docker push ghcr.io/${{ github.repository }}/$svc:latest
+            IMAGE_TAG="$DOCKER_USER/rentmate-$svc:${{ github.sha }}"
+            LATEST_TAG="$DOCKER_USER/rentmate-$svc:latest"
+            docker build -t $IMAGE_TAG -t $LATEST_TAG $CONTEXT
+            docker push $IMAGE_TAG
+            docker push $LATEST_TAG
           done
 
-      - name: Deploy to EKS
+      - name: Update Kubeconfig
         run: |
           aws eks update-kubeconfig --name rental-prod-cluster --region us-east-1
+
+      - name: Deploy to EKS Production (from Docker Hub)
+        run: |
+          DOCKER_USER="${{ secrets.DOCKERHUB_USERNAME }}"
+          for svc in auth-service listing-service roommate-service notification-service api-gateway frontend; do
+            kubectl set image deployment/$svc $svc=$DOCKER_USER/rentmate-$svc:${{ github.sha }}
+          done
           kubectl apply -f rental-roommate-finder/k8s/
-          kubectl rollout status deployment/api-gateway -n rental-app --timeout=120s
+
+      - name: Verify Rollout
+        run: |
+          for svc in auth-service listing-service roommate-service notification-service api-gateway frontend; do
+            kubectl rollout status deployment/$svc --timeout=180s
+          done
+
+      - name: Rollback on Failure
+        if: failure()
+        run: |
+          echo "Deployment failed! Rolling back..."
+          for svc in auth-service listing-service roommate-service notification-service api-gateway frontend; do
+            kubectl rollout undo deployment/$svc
+          done
