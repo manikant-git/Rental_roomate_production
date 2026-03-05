@@ -26,7 +26,7 @@ output "eks_cluster_name" {
 output "eks_cluster_endpoint" {
   description = "EKS cluster API endpoint"
   value       = module.eks.cluster_endpoint
-feat: add terraform outputs for CI/CD pipeline and K8s integration}
+}
 
 output "eks_oidc_provider_arn" {
   description = "OIDC provider ARN for IRSA"
