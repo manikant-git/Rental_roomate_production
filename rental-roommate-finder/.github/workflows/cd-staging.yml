@@ -1,0 +1,65 @@
+# ================================================================
+# CD PIPELINE - Staging Environment
+# ================================================================
+name: CD - Staging Deploy
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'rental-roommate-finder/backend/**'
+      - 'rental-roommate-finder/frontend/**'
+      - 'rental-roommate-finder/k8s/**'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    name: "Deploy to Staging"
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_STAGING_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Staging Images
+        run: |
+          for svc in auth-service listing-service roommate-service notification-service api-gateway frontend; do
+            CONTEXT="rental-roommate-finder/backend/$svc"
+            if [ "$svc" == "frontend" ]; then CONTEXT="rental-roommate-finder/frontend"; fi
+            
+            IMAGE_TAG="ghcr.io/${{ github.repository }}/$svc:staging"
+            docker build -t $IMAGE_TAG $CONTEXT
+            docker push $IMAGE_TAG
+          done
+
+      - name: Update Kubeconfig
+        run: |
+          aws eks update-kubeconfig --name rental-staging-cluster --region us-east-1
+
+      - name: Deploy to EKS
+        run: |
+          kubectl apply -f rental-roommate-finder/k8s/
+          
+      - name: Verify Rollout
+        run: |
+          for svc in auth-service listing-service api-gateway frontend; do
+            kubectl rollout status deployment/$svc --timeout=120s
+          done
