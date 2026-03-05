@@ -1,0 +1,43 @@
+name: CI - Testing & Quality
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'rental-roommate-finder/backend/**'
+      - 'rental-roommate-finder/frontend/**'
+
+jobs:
+  test:
+    name: "Quality Gate: ${{ matrix.service }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [auth-service, listing-service, roommate-service, notification-service, api-gateway]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: "https://sonarcloud.io"
+        with:
+          projectBaseDir: rental-roommate-finder/backend/${{ matrix.service }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: rental-roommate-finder/backend/${{ matrix.service }}/package-lock.json
+
+      - name: Install & Test
+        working-directory: rental-roommate-finder/backend/${{ matrix.service }}
+        run: |
+          npm ci
+          npm run lint --if-present
+          npm test --if-present
