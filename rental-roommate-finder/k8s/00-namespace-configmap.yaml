@@ -16,7 +16,15 @@ data:
   LISTING_SERVICE_URL: "http://listing-service:3002"
   ROOMMATE_SERVICE_URL: "http://roommate-service:3003"
   NOTIFICATION_SERVICE_URL: "http://notification-service:3004"
-  RABBITMQ_URL: "amqp://rabbit_user:rabbit_pass@rabbitmq:5672"
+  # RABBITMQ_URL, REDIS_URL, DATABASE_URL are constructed at runtime
+  # using credentials from app-secrets (managed by External Secrets Operator)
+  RABBITMQ_HOST: "rabbitmq"
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_USER: "rabbit_user"
   KAFKA_BROKERS: "kafka:9092"
-  REDIS_URL: "redis://:redis_pass@redis:6379"
-  DATABASE_URL: "postgresql://rental_user:rental_pass@postgres:5432/rental_db"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "rental_db"
+  POSTGRES_USER: "rental_user"
