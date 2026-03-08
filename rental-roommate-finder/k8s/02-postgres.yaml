@@ -5,6 +5,7 @@ metadata:
   namespace: rental-app
 spec:
   accessModes: [ReadWriteOnce]
+  storageClassName: gp2
   resources:
     requests:
       storage: 10Gi
@@ -25,44 +26,41 @@ spec:
         app: postgres
     spec:
       containers:
-        - name: postgres
-          image: postgres:15-alpine
-          ports:
-            - containerPort: 5432
-          env:
-            - name: POSTGRES_USER
-              value: rental_user
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: app-secrets
-                  key: POSTGRES_PASSWORD
-            - name: POSTGRES_DB
-              value: rental_db
-          volumeMounts:
-            - name: postgres-storage
-              mountPath: /var/lib/postgresql/data
-            - name: init-sql
-              mountPath: /docker-entrypoint-initdb.d
-          readinessProbe:
-            exec:
-              command: [pg_isready, -U, rental_user, -d, rental_db]
-            initialDelaySeconds: 10
-            periodSeconds: 5
-          resources:
-            requests:
-              memory: "256Mi"
-              cpu: "250m"
-            limits:
-              memory: "512Mi"
-              cpu: "500m"
-      volumes:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          value: rental_user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          value: rental_db
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
         - name: postgres-storage
-          persistentVolumeClaim:
-            claimName: postgres-pvc
-        - name: init-sql
-          configMap:
-            name: postgres-init-sql
+          mountPath: /var/lib/postgresql/data
+        readinessProbe:
+          exec:
+            command: [pg_isready, -U, rental_user, -d, rental_db]
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
 ---
 apiVersion: v1
 kind: Service
@@ -73,5 +71,5 @@ spec:
   selector:
     app: postgres
   ports:
-    - port: 5432
-      targetPort: 5432
+  - port: 5432
+    targetPort: 5432
