@@ -1,4 +1,4 @@
-# ─── Redis ────────────────────────────────────────────────────────────────────
+# ─── Redis ──────────────────────────────────────────────────────────────────
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -6,6 +6,7 @@ metadata:
   namespace: rental-app
 spec:
   accessModes: [ReadWriteOnce]
+  storageClassName: gp2
   resources:
     requests:
       storage: 2Gi
@@ -69,7 +70,7 @@ spec:
     - port: 6379
       targetPort: 6379
 ---
-# ─── RabbitMQ ─────────────────────────────────────────────────────────────────
+# ─── RabbitMQ ───────────────────────────────────────────────────────────────
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -77,6 +78,7 @@ metadata:
   namespace: rental-app
 spec:
   accessModes: [ReadWriteOnce]
+  storageClassName: gp2
   resources:
     requests:
       storage: 2Gi
@@ -146,7 +148,7 @@ spec:
       port: 15672
       targetPort: 15672
 ---
-# ─── Zookeeper ────────────────────────────────────────────────────────────────
+# ─── Zookeeper ──────────────────────────────────────────────────────────────
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -192,7 +194,7 @@ spec:
     - port: 2181
       targetPort: 2181
 ---
-# ─── Kafka ────────────────────────────────────────────────────────────────────
+# ─── Kafka ──────────────────────────────────────────────────────────────────
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -200,6 +202,7 @@ metadata:
   namespace: rental-app
 spec:
   accessModes: [ReadWriteOnce]
+  storageClassName: gp2
   resources:
     requests:
       storage: 5Gi
